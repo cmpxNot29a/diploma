@@ -1,0 +1,39 @@
+---
+- name: Deploy PostgreSQL Cluster with Patroni and HAProxy
+  hosts: all
+  become: true
+  vars:
+    postgres_version: "16"
+    patroni_version: "4.0.1"
+    etcd_version: "v3.5.0"
+    cluster_name: "pg_cluster"
+    patroni_scope: "postgres-cluster"
+    pg_data_dir: "/data/patroni"
+    pg_bin_dir: "/usr/lib/postgresql/{{ postgres_version }}/bin"
+    pg_user: "postgres"
+    pg_password: "superuser_password"
+    replication_user: "replicator"
+    replication_password: "replicator_password"
+    db_name: "mediawiki"
+    db_user: "mediawiki_user"
+    db_password: "mediawiki"
+    minio_root_user: "minioadmin"
+    minio_root_password: "minioadmin123"
+    zabbix_version: "7.0"
+    zabbix_db_name: "zabbix"
+    zabbix_db_user: "zabbix"
+    zabbix_db_password: "zabbix_password"
+
+  roles:
+    - { role: etcd, when: "'etcd_nodes' in group_names" }
+    - { role: postgres, when: "'postgres_nodes' in group_names" }
+    - { role: patroni, when: "'postgres_nodes' in group_names" }
+    - { role: haproxy, when: "'haproxy_node' in group_names" }
+    - { role: mediawiki, when: "'mediawiki_nodes' in group_names" }
+    - { role: minio, when: "'minio-server' in group_names" }
+    - { role: nginx_balancer, when: "'nginx_balancer_node' in group_names" }
+    - { role: zabbix_server, when: "'zabbix_server' in group_names" }  # Роль для Zabbix Server
+    - { role: zabbix_agent, when: "'zabbix_agent' in group_names" }
+    - { role: backup_db_service, when: "'backup_db_service' in group_names" }
+    - { role: backup_mediawiki_data_service, when: "'backup_mediawiki_data_service' in group_names" }
+

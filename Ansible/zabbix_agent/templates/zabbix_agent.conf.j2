@@ -1,0 +1,6 @@
+# Zabbix Agent configuration file
+
+Server={{ hostvars['zabbix-server'].ansible_default_ipv4.address }}
+ServerActive={{ hostvars['zabbix-server'].ansible_default_ipv4.address }}
+PidFile=/var/run/zabbix/zabbix_agentd.pid
+LogFile=/var/log/zabbix/zabbix_agentd.log

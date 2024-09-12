@@ -1,0 +1,54 @@
+---
+- name: Install dependencies
+  apt:
+    name:
+      - wget
+    state: present
+    update_cache: yes
+  # Устанавливаем необходимые зависимости.
+
+- name: Download MinIO .deb package
+  command: >
+    wget https://dl.min.io/server/minio/release/linux-amd64/archive/minio_20240826153307.0.0_amd64.deb -O /tmp/minio.deb
+  args:
+    creates: /tmp/minio.deb
+  # Загружаем MinIO .deb пакет.
+
+- name: Install MinIO from .deb package
+  apt:
+    deb: /tmp/minio.deb
+    update_cache: yes
+  # Устанавливаем MinIO с помощью apt из локального файла .deb.
+
+- name: Create minio-user and group
+  user:
+    name: minio-user
+    state: present
+    shell: /bin/false
+    system: yes
+  # Создаем системного пользователя и группу для MinIO.
+
+- name: Create MinIO data directory
+  file:
+    path: /var/lib/minio
+    state: directory
+    owner: minio-user
+    group: minio-user
+    mode: '0755'
+  # Создаем директорию для хранения данных MinIO с владельцем minio-user.
+
+- name: Configure MinIO environment file
+  template:
+    src: minio_env.j2
+    dest: /etc/default/minio
+    owner: root
+    group: root
+    mode: '0644'
+  # Настраиваем MinIO через файл окружения (переменные для доступа).
+
+- name: Start and enable MinIO service
+  systemd:
+    name: minio
+    enabled: yes
+    state: started
+  # Запускаем и активируем службу MinIO.

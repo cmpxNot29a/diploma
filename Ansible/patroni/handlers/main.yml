@@ -1,0 +1,6 @@
+---
+- name: Restart Patroni
+  systemd:
+    name: patroni
+    state: restarted
+  # Перезапускает Patroni при изменении конфигурационных файлов.

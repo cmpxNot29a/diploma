@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# Параметры для резервного копирования
+MEDIAWIKI_DIR="{{ mediawiki_dir }}"   # Путь к директории MediaWiki
+BACKUP_DIR="/tmp"  # Локальная директория для временного хранения резервных копий
+INSTANCE_NAME="{{ inventory_hostname }}" # Имя экземпляра MediaWiki
+DB_NAME="{{ db_name }}"       # Имя базы данных
+DB_USER="{{ pg_user }}"          # Имя пользователя базы данных
+DB_PASSWORD="{{ pg_password }}"  # Пароль пользователя базы данных
+DB_HOST="{{ hostvars['haproxy'].ansible_default_ipv4.address }}"       # Хост базы данных (обычно localhost)
+DB_PORT="5000"
+# Параметры для MinIO
+MINIO_BIN_DIR="/root/minio-binaries"
+MINIO_ALIAS="myminio"         # Имя алиаса MinIO, которое вы настроили в mc (например, через `mc alias set`)
+MINIO_BUCKET="mediwiki-data-dir"               # Название бакета в MinIO
+
+# Имя резервной копии (по дате)
+DATE=$(date +"%Y-%m-%d_%H-%M-%S")
+BACKUP_FILE="${BACKUP_DIR}/${INSTANCE_NAME}_backup_${DATE}.tar.gz"
+
+# Шаг 1: Создание архива директории MediaWiki
+echo "Создание архива директории MediaWiki..."
+tar -czf ${BACKUP_FILE} -C $(dirname ${MEDIAWIKI_DIR}) $(basename ${MEDIAWIKI_DIR})
+
+# Проверка успешности архивации
+if [ $? -eq 0 ]; then
+    echo "Архивирование директории MediaWiki выполнено успешно: ${BACKUP_FILE}"
+
+    # Шаг 2: Загрузка архива в MinIO
+    echo "Загрузка архива в MinIO..."
+    ${MINIO_BIN_DIR}/mc cp ${BACKUP_FILE} ${MINIO_ALIAS}/${MINIO_BUCKET}/
+
+    # Проверка успешности загрузки в MinIO
+    if [ $? -eq 0 ]; then
+        echo "Файл успешно загружен в MinIO: ${MINIO_ALIAS}/${MINIO_BUCKET}/$(basename ${BACKUP_FILE})"
+
+        # Шаг 3: Удаление локальной копии после успешной загрузки
+        echo "Удаление локальной копии резервной копии..."
+        rm -f ${BACKUP_FILE}
+        echo "Локальная копия резервной копии удалена"
+    else
+        echo "Ошибка при загрузке файла в MinIO" >&2
+    fi
+else
+    echo "Ошибка при архивации директории MediaWiki" >&2
+fi
+
+# Шаг 4: Удаление старых архивов в MinIO (старше 30 дней)
+echo "Удаление старых архивов в MinIO (старше 30 дней)..."
+${MINIO_BIN_DIR}/mc find ${MINIO_ALIAS}/${MINIO_BUCKET}/ --older-than 30d --exec "${MINIO_BIN_DIR}/mc rm {}"

@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# Параметры подключения к базе данных PostgreSQL
+DB_NAME="{{ db_name }}"       # Имя базы данных
+DB_USER="{{ pg_user }}"          # Имя пользователя базы данных
+DB_PASSWORD="{{ pg_password }}"  # Пароль пользователя базы данных
+DB_HOST="{{ hostvars['haproxy'].ansible_default_ipv4.address }}"       # Хост базы данных (обычно localhost)
+DB_PORT="5000"
+# Параметры для MinIO
+MINIO_BIN_DIR="/root/minio-binaries"
+MINIO_ALIAS="myminio"         # Имя алиаса MinIO, которое вы настроили в mc (например, через `mc alias set`)
+MINIO_BUCKET="mediawiki-db-dump"        # Название бакета, куда будут загружаться резервные копии
+
+# Локальная директория для хранения резервных копий
+BACKUP_DIR="/tmp"
+
+# Имя резервной копии (по дате)
+DATE=$(date +"%Y-%m-%d_%H-%M-%S")
+BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_backup_${DATE}.dump"
+BACKUP_FILE_GZ="${BACKUP_FILE}.gz"
+
+# Устанавливаем переменную для пароля, чтобы избежать его ввода вручную
+export PGPASSWORD="${DB_PASSWORD}"
+
+# Шаг 1: Выполняем резервное копирование базы данных в бинарном формате (-F c)
+pg_dump -U ${DB_USER} -h ${DB_HOST} -p ${DB_PORT} -F c ${DB_NAME} -f ${BACKUP_FILE}
+
+# Проверка успешности резервного копирования
+if [ $? -eq 0 ]; then
+    echo "Резервное копирование базы данных выполнено успешно: ${BACKUP_FILE}"
+
+    # Шаг 2: Сжимаем резервную копию с помощью gzip
+    gzip ${BACKUP_FILE}
+
+    # Проверяем успешность сжатия
+    if [ $? -eq 0 ]; then
+        echo "Резервная копия успешно сжата: ${BACKUP_FILE_GZ}"
+
+        # Шаг 3: Загрузка сжатой резервной копии в MinIO
+       ${MINIO_BIN_DIR}/mc cp ${BACKUP_FILE_GZ} ${MINIO_ALIAS}/${MINIO_BUCKET}/
+
+        # Проверка успешности загрузки в MinIO
+        if [ $? -eq 0 ]; then
+            echo "Файл успешно загружен в MinIO: ${MINIO_ALIAS}/${MINIO_BUCKET}/$(basename ${BACKUP_FILE_GZ})"
+
+            # Шаг 4: Удаление локальной копии после успешной загрузки
+            rm -f ${BACKUP_FILE_GZ}
+            echo "Локальная копия резервной копии удалена"
+        else
+            echo "Ошибка при загрузке файла в MinIO" >&2
+        fi
+    else
+        echo "Ошибка при сжатии файла" >&2
+    fi
+else
+    echo "Ошибка при резервном копировании базы данных" >&2
+fi
+
+# Шаг 5: Удаление старых архивов в MinIO (старше 30 дней)
+${MINIO_BIN_DIR}/mc find ${MINIO_ALIAS}/${MINIO_BUCKET}/ --older-than 30d --exec "${MINIO_BIN_DIR}/mc rm {}"

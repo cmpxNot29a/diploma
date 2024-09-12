@@ -1,0 +1,2 @@
+---
+backup_script_path: "/root/backup_db.sh"

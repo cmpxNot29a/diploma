@@ -1,0 +1,28 @@
+---
+- name: Добавление репозитория Zabbix
+  shell: |
+    wget https://repo.zabbix.com/zabbix/{{ zabbix_version }}/ubuntu/pool/main/z/zabbix-release/zabbix-release_{{ zabbix_version }}-2+ubuntu24.04_all.deb
+    dpkg -i zabbix-release_{{ zabbix_version }}-2+ubuntu24.04_all.deb
+    apt update
+
+- name: Install Zabbix agent
+  apt:
+    name: zabbix-agent
+    state: present
+    update_cache: yes
+  retries: 3
+  delay: 30
+  # Устанавливаем Zabbix агент.
+
+- name: Configure Zabbix agent
+  template:
+    src: zabbix_agent.conf.j2
+    dest: /etc/zabbix/zabbix_agentd.conf
+  # Настраиваем конфигурацию Zabbix агента.
+
+- name: Start and enable Zabbix agent
+  systemd:
+    name: zabbix-agent
+    enabled: yes
+    state: restarted
+  # Запускаем и активируем Zabbix агент.

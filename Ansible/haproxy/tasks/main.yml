@@ -1,0 +1,29 @@
+---
+- name: Set etcd cluster host IPs
+  set_fact:
+    etcd_cluster_hosts: "{{ dict(groups['etcd_nodes'] | zip(groups['etcd_nodes'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']))) }}"
+#     etcd_cluster_hosts: "{{ dict(ansible_play_hosts | zip(ansible_play_hosts | map('extract', hostvars, ['ansible_default_ipv4', 'address']))) }}"
+
+- name: Install HAProxy
+  apt:
+    name: haproxy
+    state: present
+    update_cache: yes
+  # Устанавливает HAProxy на целевой системе.
+
+- name: Configure HAProxy
+  template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: root
+    group: root
+    mode: '0644'
+  # notify: Restart HAProxy
+  # Конфигурирует HAProxy, используя шаблон haproxy.cfg.j2.
+
+- name: Enable and start HAProxy service
+  systemd:
+    name: haproxy
+    enabled: yes
+    state: reloaded
+  # Включает и запускает службу HAProxy.

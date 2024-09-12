@@ -1,0 +1,47 @@
+user www-data;  # Пользователь и группа, под которыми запускается Nginx
+worker_processes auto;  # Автоматическое определение числа процессов рабочих Nginx в зависимости от числа доступных ядер CPU
+pid /run/nginx.pid;  # Файл, где хранится PID процесса Nginx
+include /etc/nginx/modules-enabled/*.conf;  # Подключение всех доступных модулей Nginx
+
+events {
+    worker_connections 768;  # Максимальное количество одновременных соединений, которые один процесс worker может обрабатывать
+}
+
+http {
+    sendfile on;  # Использование sendfile для ускорения передачи файлов (особенно при работе с большими файлами)
+    tcp_nopush on;  # Увеличение производительности путем отправки данных в одном пакете, а не в нескольких
+    tcp_nodelay on;  # Отключение задержек TCP для улучшения времени отклика
+    keepalive_timeout 65;  # Время, в течение которого соединение с клиентом остается открытым после последнего запроса
+    types_hash_max_size 2048;  # Максимальный размер хеша типов MIME
+
+    include /etc/nginx/mime.types;  # Подключение файла с определением MIME типов для обработки различных типов файлов
+    default_type application/octet-stream;  # MIME тип по умолчанию для файлов, не имеющих явного типа
+
+    # Конфигурация балансировки нагрузки с использованием sticky sessions (ip_hash)
+    upstream mediawiki_backend {
+       # ip_hash;  # Директива для включения sticky sessions: каждый клиент закрепляется за конкретным сервером на основе его IP-адреса
+        server {{ hostvars['mediawiki1'].ansible_default_ipv4.address }} max_fails=3 fail_timeout=30s;  # Первый инстанс MediaWiki
+        server {{ hostvars['mediawiki2'].ansible_default_ipv4.address }} backup;  # Второй инстанс MediaWiki
+    }
+
+    server {
+        listen 80 default_server;  # Слушаем порт 80 по умолчанию (HTTP)
+        listen [::]:80 default_server;  # Поддержка IPv6 на порту 80
+
+        server_name _;  # Поддержка всех доменных имен (wildcard) для этого сервера
+
+        location / {
+            proxy_pass http://mediawiki_backend;  # Проксирование запросов к upstream (балансировщику) mediawiki_backend
+            proxy_set_header Host $host;  # Передача заголовка Host от клиента к серверу
+            proxy_set_header X-Real-IP $remote_addr;  # Передача реального IP-адреса клиента на сервер
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;  # Сохранение цепочки IP-адресов клиентов при проксировании
+            proxy_set_header X-Forwarded-Proto $scheme;  # Передача протокола (http или https) для сохранения информации о протоколе клиента
+            proxy_connect_timeout 5s;
+            proxy_read_timeout 60s;
+            proxy_send_timeout 60s;
+
+            # Добавляем заголовок с адресом сервера, обработавшего запрос
+            add_header X-Upstream-Server $upstream_addr;
+        }
+    }
+}

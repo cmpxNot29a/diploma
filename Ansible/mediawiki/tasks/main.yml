@@ -1,0 +1,190 @@
+---
+- name: Set etcd cluster host IPs
+  set_fact:
+    etcd_cluster_hosts: "{{ dict(groups['etcd_nodes'] | zip(groups['etcd_nodes'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']))) }}"
+
+- name: Install Nginx, PHP, and required extensions
+  apt:
+    name:
+      - nginx
+      - php-fpm
+      - php-pgsql
+      - php-intl
+      - php-xml
+      - php-mbstring
+      - php-apcu
+      - postgresql-client  # Установка PostgreSQL клиента для использования pg_restore
+      - python3-psycopg2   # Установка модуля psycopg2 для Python 3
+    state: present
+    update_cache: yes
+  retries: 3
+  delay: 60
+  # Устанавливаем Nginx, PHP-FPM, клиент PostgreSQL и необходимые расширения для работы MediaWiki.
+
+- name: Download MediaWiki
+  get_url:
+    url: "https://releases.wikimedia.org/mediawiki/1.39/mediawiki-1.39.1.tar.gz"
+    dest: "/tmp/mediawiki.tar.gz"
+  # Загружаем архив с MediaWiki.
+
+- name: Create directory for MediaWiki
+  file:
+    path: /var/www/mediawiki
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0755'
+  # Создаем каталог для MediaWiki, если он не существует.
+
+- name: Extract MediaWiki
+  unarchive:
+    src: "/tmp/mediawiki.tar.gz"
+    dest: "/var/www/mediawiki"
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+  # Распаковываем MediaWiki в каталог `/var/www/mediawiki`.
+
+- name: Check if MediaWiki database exists
+  postgresql_query:
+    query: "SELECT 1 FROM pg_database WHERE datname='{{ db_name }}';"
+    login_host: "{{ etcd_cluster_hosts['haproxy'] }}"
+    login_port: 5000
+    login_user: "{{ pg_user }}"
+    login_password: "{{ pg_password }}"
+  register: db_check
+  failed_when: false
+  changed_when: false
+  # retries: 4
+  # delay: 3
+  # Проверяем, существует ли база данных MediaWiki.
+
+- name: Check if MediaWiki user exists
+  postgresql_query:
+    query: "SELECT 1 FROM pg_roles WHERE rolname='{{ db_user }}';"
+    login_host: "{{ etcd_cluster_hosts['haproxy'] }}"
+    login_port: 5000
+    login_user: "{{ pg_user }}"
+    login_password: "{{ pg_password }}"
+  register: user_check
+  failed_when: false
+  changed_when: false
+  # retries: 4
+  # delay: 3
+  # Проверяем, существует ли пользователь MediaWiki.
+
+- name: Create PostgreSQL database for MediaWiki
+  community.postgresql.postgresql_db:
+    name: "{{ db_name }}"
+    state: present
+    login_host: "{{ etcd_cluster_hosts['haproxy'] }}"
+    login_port: 5000
+    login_user: "{{ pg_user }}"
+    login_password: "{{ pg_password }}"
+  when: 
+    - db_check.result[0] is not defined
+    - inventory_hostname == 'mediawiki1'
+  # ignore_errors: yes
+  retries: 10
+  delay: 60
+  # Создаем базу данных для MediaWiki, если она не существует, и игнорируем ошибки.
+
+- name: Create PostgreSQL user for MediaWiki
+  community.postgresql.postgresql_user:
+    name: "{{ db_user }}"
+    password: "{{ db_password }}"
+    state: present
+    login_host: "{{ etcd_cluster_hosts['haproxy'] }}"
+    login_port: 5000
+    login_user: "{{ pg_user }}"
+    login_password: "{{ pg_password }}"
+  when: 
+    - user_check.result[0] is not defined
+    - inventory_hostname == 'mediawiki1'
+  # ignore_errors: yes
+  # Создаем пользователя базы данных для MediaWiki, если он не существует, и игнорируем ошибки.
+
+- name: Copy database dump to target
+  copy:
+    src: mediawiki.dump
+    dest: /tmp/mediawiki.dump
+    mode: '0644'
+  when: db_check.result[0] is not defined
+  # Копируем дамп базы данных на целевой хост, выполняется только один раз.
+
+- name: Restore MediaWiki database from dump using pg_restore
+  command: >
+    pg_restore --dbname={{ db_name }}
+    --host={{ etcd_cluster_hosts['haproxy'] }}
+    --port=5000 --username={{ pg_user }} -F c /tmp/mediawiki.dump
+  environment:
+    PGPASSWORD: "{{ pg_password }}"
+  when: 
+    - db_check.result[0] is not defined
+    - inventory_hostname == 'mediawiki1'
+  ignore_errors: yes
+  # Восстанавливаем базу данных MediaWiki из дампа с использованием pg_restore, выполняется только один раз.
+
+- name: Grant all privileges on database to MediaWiki user
+  community.postgresql.postgresql_privs:
+    db: "{{ db_name }}"
+    role: "{{ db_user }}"
+    privs: ALL
+    type: database
+    state: present
+    login_host: "{{ etcd_cluster_hosts['haproxy'] }}"
+    login_port: 5000
+    login_user: "{{ pg_user }}"
+    login_password: "{{ pg_password }}"
+  ignore_errors: yes
+  # Назначаем все привилегии на базу данных MediaWiki пользователю MediaWiki и игнорируем ошибки.
+
+- name: Configure MediaWiki
+  template:
+    src: LocalSettings.php.j2
+    dest: /var/www/mediawiki/LocalSettings.php
+    owner: www-data
+    group: www-data
+    mode: '0644'
+  # Копируем шаблон LocalSettings.php в каталог MediaWiki.
+
+# - name: Run MediaWiki update script
+#   command: php /var/www/mediawiki/maintenance/update.php --quick
+#   become_user: www-data
+#   ignore_errors: yes
+#   # Запускаем скрипт обновления базы данных MediaWiki и игнорируем ошибки.
+
+- name: Ensure ownership of /var/www/mediawiki is www-data
+  file:
+    path: /var/www/mediawiki
+    state: directory
+    owner: www-data
+    group: www-data
+    recurse: yes
+  # Рекурсивно устанавливаем владельца и группу www-data для всех файлов и папок в /var/www/mediawiki.
+
+- name: Configure Nginx for MediaWiki
+  template:
+    src: mediawiki_nginx.conf.j2
+    dest: /etc/nginx/sites-available/mediawiki
+    owner: root
+    group: root
+    mode: '0644'
+  # Настраиваем Nginx для обслуживания MediaWiki.
+
+- name: Enable MediaWiki site in Nginx
+  file:
+    src: /etc/nginx/sites-available/mediawiki
+    dest: /etc/nginx/sites-enabled/mediawiki
+    state: link
+  # Включаем конфигурацию MediaWiki в Nginx.
+
+- name: Reload Nginx
+  systemd:
+    name: nginx
+    state: restarted
+
+- name: Reload php-fpm
+  systemd:
+    name: php8.3-fpm
+    state: restarted
+  # Перезагрузка Nginx после изменения конфигурации.

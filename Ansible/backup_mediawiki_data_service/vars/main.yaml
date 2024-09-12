@@ -1,0 +1,3 @@
+---
+backup_script_path: "/root/backup_media_dir.sh"
+mediawiki_dir: "/var/www/mediawiki"

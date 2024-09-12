@@ -1,0 +1,55 @@
+all:
+  children:
+    etcd_nodes:
+      hosts:
+        pg_1:
+          ansible_host: <your ip>
+        pg_2:
+          ansible_host: <your ip>
+        haproxy:
+          ansible_host: <your ip>
+    postgres_nodes:
+      hosts:
+        pg_1:
+        pg_2:
+    haproxy_node:
+      hosts:
+        haproxy: 
+    mediawiki_nodes:
+      hosts:
+        mediawiki1:
+          ansible_host: <your ip>
+        mediawiki2:
+          ansible_host: <your ip>
+    minio-server:
+      hosts:
+        minio:
+          ansible_host: <your ip>
+    nginx_balancer_node:
+      hosts:
+        nginx_balancer:
+          ansible_host: <your ip>
+    zabbix_server:
+      hosts:
+        zabbix-server:
+          ansible_host: <your ip>
+    zabbix_agent:
+      hosts:
+        mediawiki1:
+        mediawiki2:
+        haproxy:
+        pg_1:
+        pg_2:
+        minio:
+        nginx_balancer:
+    backup_db_service:
+      hosts:
+        haproxy:
+    backup_mediawiki_data_service:
+      hosts:
+        mediawiki1:
+        mediawiki2:
+
+  vars:
+    ansible_user: ansible
+    ansible_ssh_private_key_file: < key file path >

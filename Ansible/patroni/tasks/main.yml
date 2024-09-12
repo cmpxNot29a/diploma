@@ -1,0 +1,96 @@
+---
+- name: Set etcd cluster host IPs
+  set_fact:
+    etcd_cluster_hosts: "{{ dict(groups['etcd_nodes'] | zip(groups['etcd_nodes'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']))) }}"
+#     etcd_cluster_hosts: "{{ dict(ansible_play_hosts | zip(ansible_play_hosts | map('extract', hostvars, ['ansible_default_ipv4', 'address']))) }}"
+
+- name: Ensure dependencies are installed
+  apt:
+    name:
+      - python3-pip
+      - python3-dev
+      - libpq-dev
+      - gcc
+      - libssl-dev
+      - libffi-dev
+      - build-essential
+    state: present
+    update_cache: yes
+  retries: 3
+  delay: 30
+  # Устанавливаем необходимые системные зависимости для Patroni и psycopg2/psycopg3.
+
+- name: Install Patroni and dependencies via pip3
+  pip:
+    name: "patroni[psycopg3,etcd3]"
+    executable: pip3
+    state: present
+    extra_args: --break-system-packages
+  # Устанавливаем Patroni с опциями psycopg3 и etcd3, используя pip3 и флаг --break-system-packages.
+
+- name: Disable and stop PostgreSQL service
+  systemd:
+    name: postgresql
+    enabled: no
+    state: stopped
+  # Отключаем и останавливаем стандартный сервис PostgreSQL, чтобы Patroni мог управлять им.
+
+- name: Create Patroni configuration directory
+  file:
+    path: /etc/patroni
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0755'
+  # Создаем каталог для конфигурационных файлов Patroni, принадлежащий пользователю postgres.
+
+- name: Configure Patroni
+  template:
+    src: patroni.yml.j2
+    dest: /etc/patroni/patroni.yml
+    owner: postgres
+    group: postgres
+    mode: '0644'
+  # Конфигурируем Patroni, используя шаблон patroni.yml.j2, с правильными правами доступа.
+
+- name: Ensure PostgreSQL data directory exists
+  file:
+    path: "{{ pg_data_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0700'
+  # Создаем каталог для данных Patroni PostgreSQL.
+
+- name: Create systemd service for Patroni
+  copy:
+    content: |
+      [Unit]
+      Description=Runners to orchestrate a high-availability PostgreSQL
+      After=syslog.target network.target
+
+      [Service]
+      Type=simple
+      User=postgres
+      Group=postgres
+      Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+      ExecStart=/usr/local/bin/patroni /etc/patroni/patroni.yml
+      Restart=on-failure
+      RestartSec=5
+      LimitNOFILE=4096
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/patroni.service
+    owner: root
+    group: root
+    mode: '0644'
+  # notify: Restart Patroni
+  # Создаем systemd юнит для Patroni, который запускается от имени пользователя postgres.
+
+- name: Enable and start Patroni service
+  systemd:
+    name: patroni
+    enabled: yes
+    state: started
+  # Включаем и запускаем службу Patroni через systemd от имени пользователя postgres.

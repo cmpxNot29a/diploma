@@ -1,0 +1,25 @@
+---
+- name: Install Nginx
+  apt:
+    name: nginx
+    state: present
+    update_cache: yes
+  retries: 3
+  delay: 30
+  # Устанавливаем Nginx.
+
+- name: Configure Nginx as a load balancer
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: '0644'
+  # Настраиваем Nginx как балансировщик нагрузки.
+
+- name: Ensure Nginx is started and enabled
+  systemd:
+    name: nginx
+    enabled: yes
+    state: reloaded
+  # Запускаем и включаем Nginx.

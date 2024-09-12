@@ -1,0 +1,59 @@
+# Основные параметры Patroni
+scope: {{ patroni_scope }}
+namespace: /service/
+name: {{ inventory_hostname }}
+
+# Настройка REST API для управления Patroni
+restapi:
+  listen: 0.0.0.0:8008
+  connect_address: {{ ansible_default_ipv4.address }}:8008
+
+# Конфигурация подключения к etcd
+etcd3:
+  hosts: {{ etcd_cluster_hosts.values() | join(':2379,') }}:2379
+
+# Параметры инициализации кластера
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+    postgresql:
+      use_pg_rewind: true
+      parameters:
+        max_connections: 100
+        wal_level: replica
+        synchronous_commit: "off"
+        max_wal_senders: 5
+        max_replication_slots: 5
+
+  initdb:
+    - encoding: UTF8
+    - locale: en_US.UTF-8
+  
+  pg_hba:
+    - local all postgres peer
+    - local all all peer
+    - host all all 192.168.10.0/24 md5
+    - host replication replicator localhost trust
+    - host replication replicator 192.168.10.0/24 md5
+
+# Настройки PostgreSQL для Patroni
+postgresql:
+  listen: 0.0.0.0:5432
+  connect_address: {{ ansible_default_ipv4.address }}:5432
+  data_dir: {{ pg_data_dir }}
+  bin_dir: {{ pg_bin_dir }}
+  authentication:
+    replication:
+      username: {{ replication_user }}
+      password: {{ replication_password }}
+    superuser:
+      username: {{ pg_user }}
+      password: {{ pg_password }}
+  parameters:
+    unix_socket_directories: '/var/run/postgresql'
+    shared_buffers: '128MB'
+    max_wal_size: '1GB'
+    min_wal_size: '80MB'

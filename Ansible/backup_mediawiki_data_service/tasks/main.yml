@@ -1,0 +1,26 @@
+---
+- name: Configure backup_media_dir.sh
+  template:
+    src: backup_media_dir.sh.j2
+    dest: "{{ backup_script_path }}"
+    owner: root
+    group: root
+    mode: '0700'
+  # Настраиваем Nginx как балансировщик нагрузки.
+
+- name: Configure  backup_media_dir.service
+  template:
+    src: backup_media_dir.service.j2
+    dest: /etc/systemd/system/backup_media_dir.service
+
+- name: Configure backup_media_dir.timer
+  template:
+    src: backup_media_dir.timer.j2
+    dest: /etc/systemd/system/backup_media_dir.timer
+
+- name: Start and enable backup_db.timer
+  systemd:
+    name: backup_media_dir.timer
+    enabled: yes
+    state: started
+

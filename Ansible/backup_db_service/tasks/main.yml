@@ -1,0 +1,25 @@
+---
+- name: Configure backup_db.sh
+  template:
+    src: backup_db.sh.j2
+    dest: "{{ backup_script_path }}"
+    owner: root
+    group: root
+    mode: '0700'
+  # Настраиваем Nginx как балансировщик нагрузки.
+
+- name: Configure backup_db.service
+  template:
+    src: backup_db.service.j2
+    dest: /etc/systemd/system/backup_db.service
+
+- name: Configure backup_db.timer
+  template:
+    src: backup_db.timer.j2
+    dest: /etc/systemd/system/backup_db.timer
+
+- name: Start and enable backup_db.timer
+  systemd:
+    name: backup_db.timer
+    enabled: yes
+    state: started

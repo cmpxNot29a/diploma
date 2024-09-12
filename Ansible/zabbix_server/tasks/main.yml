@@ -1,0 +1,78 @@
+---
+- name: Добавление репозитория Zabbix
+  shell: |
+    wget https://repo.zabbix.com/zabbix/{{ zabbix_version }}/ubuntu/pool/main/z/zabbix-release/zabbix-release_{{ zabbix_version }}-2+ubuntu24.04_all.deb
+    dpkg -i zabbix-release_{{ zabbix_version }}-2+ubuntu24.04_all.deb
+    apt update
+
+- name: Установка Zabbix сервера, фронтенда, агента, PostgreSQL 16, PHP 8.3
+  apt:
+    name:
+      - zabbix-server-pgsql
+      - zabbix-frontend-php
+      - zabbix-nginx-conf
+      - zabbix-sql-scripts
+      - zabbix-agent
+      - postgresql-16
+      - php8.3-pgsql
+    state: present
+  retries: 3
+  delay: 30
+
+- name: Создание пользователя и базы данных для Zabbix
+  shell: |
+    sudo -u postgres psql -c "CREATE USER {{ zabbix_db_user }} WITH PASSWORD '{{ zabbix_db_password }}';"
+    sudo -u postgres psql -c "CREATE DATABASE {{ zabbix_db_name }} OWNER {{ zabbix_db_user }};"
+  ignore_errors: yes
+
+- name: Восстановление базы данных из дампа
+  copy:
+    src: zabbix.dump
+    dest: /tmp/zabbix.dump
+
+- name: Импорт дампа в базу данных Zabbix
+  shell: |
+    sudo -u {{ pg_user }} pg_restore -d {{ zabbix_db_name }} -F c /tmp/zabbix.dump
+  ignore_errors: yes
+
+- name: Copy zabbix settings
+  copy:
+    src: zabbix.conf.php
+    dest: /etc/zabbix/web/zabbix.conf.php
+    owner: www-data
+    group: www-data
+    mode: '0600'
+
+- name: Настройка Zabbix Server
+  lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: '^\s*# DBPassword='
+    line: "DBPassword={{ zabbix_db_password }}"
+
+- name: Раскомментировать строки в конфигурации NGINX
+  replace:
+    path: /etc/nginx/conf.d/zabbix.conf
+    regexp: '^\s*#\s+listen\s+8080;'
+    replace: "listen 80;"
+
+- name: Заменить server_name на IP
+  replace:
+    path: /etc/nginx/conf.d/zabbix.conf
+    regexp: '^\s*#\s+server_name\s+example.com;'
+    replace: "server_name {{ ansible_host }};"
+
+- name: Remove default Nginx site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+
+- name: Запуск и включение сервисов Zabbix
+  systemd:
+    name: "{{ item }}"
+    state: restarted
+    enabled: yes
+  loop:
+    - zabbix-server
+    - zabbix-agent
+    - nginx
+    - php8.3-fpm

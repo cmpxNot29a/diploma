@@ -1,0 +1,16 @@
+---
+- name: Ensure PostgreSQL is installed
+  apt:
+    name: "postgresql-{{ postgres_version }}"
+    state: present
+    update_cache: yes
+  retries: 3
+  delay: 30
+  # Устанавливаем PostgreSQL на целевой системе.
+
+- name: Disable and stop PostgreSQL service
+  systemd:
+    name: postgresql
+    enabled: no
+    state: stopped
+  # Отключаем и останавливаем стандартный сервис PostgreSQL, чтобы Patroni мог управлять им.

@@ -1,0 +1,11 @@
+[Unit]
+Description=Резервное копирование mediawiki data directory и загрузка в MinIO
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={{ backup_script_path }}
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Mediawiki  Backup Script every 5 minutes
+
+[Timer]
+OnBootSec=7min
+OnUnitActiveSec=7min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
